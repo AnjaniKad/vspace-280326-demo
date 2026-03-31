@@ -1,86 +1,155 @@
 `default_nettype none
 
-module tt_um_advaittej_stopwatch #(
-    parameter CLOCKS_PER_SECOND = 24'd9_999_999
-)(
-    // DO NOT CHANGE THESE NAMES!!
-    // The factory tools require these exact port definitions
-    input  wire [7:0] ui_in,    // Dedicated inputs
-    output wire [7:0] uo_out,   // Dedicated outputs
-    input  wire [7:0] uio_in,   // IOs: Input path
-    output wire [7:0] uio_out,  // IOs: Output path
-    output wire [7:0] uio_oe,   // IOs: Enable path (active high: 0=input, 1=output)
-    input  wire       ena,      // always 1 when the design is powered
-    input  wire       clk,      // clock
-    input  wire       rst_n     // reset_n - low to reset
+module tt_um_AnjaniKad_medical_bms (
+    input  wire [7:0] ui_in,
+    output wire [7:0] uo_out,
+    input  wire [7:0] uio_in,
+    output wire [7:0] uio_out,
+    output wire [7:0] uio_oe,
+    input  wire       ena,
+    input  wire       clk,
+    input  wire       rst_n
 );
 
-    // Intuitive aliasing ie translating TT to readable names
-    assign uio_out = 8'b0; // Tie off unused pins to prevent errors
+    assign uio_out = 8'b0;
     assign uio_oe  = 8'b0;
 
-    // Inverting active-low reset so 1 means reset now for our logic
-    wire reset_active = !rst_n;       
-    
-    // Pin 0 of input block is button
-    wire start_pause_btn = ui_in[0];  
-    
-    // Internal wire for 7-segment data
-    wire [6:0] led_segments;          
+    wire [3:0] voltage    = ui_in[3:0];
+    wire [1:0] current    = ui_in[5:4];
+    wire       temp_flag  = ui_in[6];
+    wire       safe_reset = ui_in[7];
 
-    // Drive physical output pins with our internal data
-    assign uo_out[6:0] = led_segments; 
-    assign uo_out[7]   = 1'b0; // Decimal point off
+    wire volt_crit   = (voltage <= 4'd1) | (voltage >= 4'd14);
+    wire volt_warn   = ((voltage == 4'd2)  | (voltage == 4'd3) |
+                        (voltage == 4'd12) | (voltage == 4'd13));
+    wire volt_normal = ~volt_crit & ~volt_warn;
 
-    // CLOCK DIVIDER
-    reg [23:0] clock_counter;
-    wire one_second_pulse = (clock_counter == CLOCKS_PER_SECOND);
-
-    always @(posedge clk or posedge reset_active) begin
-        if (reset_active) begin
-            clock_counter <= 0;
-        end else if (start_pause_btn) begin
-            if (one_second_pulse) begin
-                clock_counter <= 0;
-            end else begin
-                clock_counter <= clock_counter + 1;
-            end
-        end
+    reg [1:0] soc;
+    always @(*) begin
+        if      (voltage <= 4'd1)  soc = 2'b00;
+        else if (voltage <= 4'd4)  soc = 2'b01;
+        else if (voltage <= 4'd10) soc = 2'b10;
+        else                       soc = 2'b11;
     end
 
-    // DIGIT COUNTER: counts 0 to 9
-    reg [3:0] current_digit;
+    wire curr_warn = (current == 2'b01);
+    wire curr_crit = current[1];
 
-    always @(posedge clk or posedge reset_active) begin
-        if (reset_active) begin
-            current_digit <= 0;
-        end else if (start_pause_btn && one_second_pulse) begin
-            if (current_digit == 9) begin
-                current_digit <= 0;
-            end else begin
-                current_digit <= current_digit + 1;
-            end
-        end
+    reg thermal_latch;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            thermal_latch <= 1'b0;
+        else if (temp_flag)
+            thermal_latch <= 1'b1;
+        else if (safe_reset && !temp_flag)
+            thermal_latch <= 1'b0;
     end
 
-    // 7-SEGMENT DECODER: translates to LEDs
-    reg [6:0] decoded_leds;
-    assign led_segments = decoded_leds;
+    wire any_crit = volt_crit | curr_crit | thermal_latch;
+    wire any_warn = volt_warn | curr_warn;
+    wire all_safe = volt_normal & ~curr_crit & ~curr_warn & ~thermal_latch;
+
+    localparam IDLE     = 2'b00;
+    localparam WARN     = 2'b01;
+    localparam FAULT    = 2'b10;
+    localparam SHUTDOWN = 2'b11;
+
+    reg [1:0] state, next_state;
+
+    reg [2:0] hyst_cnt;
+    wire      hyst_done = (hyst_cnt == 3'd7);
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            hyst_cnt <= 3'd0;
+        else if ((state == WARN) && all_safe)
+            hyst_cnt <= hyst_cnt + 3'd1;
+        else
+            hyst_cnt <= 3'd0;
+    end
+
+    reg [3:0] wdog_cnt;
+    wire      wdog_fired = (wdog_cnt == 4'd15);
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            wdog_cnt <= 4'd0;
+        else if (state == FAULT)
+            wdog_cnt <= wdog_fired ? wdog_cnt : (wdog_cnt + 4'd1);
+        else
+            wdog_cnt <= 4'd0;
+    end
+
+    // FSM with ena (TT compliant)
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) state <= IDLE;
+        else if (ena) state <= next_state;
+    end
 
     always @(*) begin
-        case (current_digit)
-            4'd0: decoded_leds = 7'b0111111;
-            4'd1: decoded_leds = 7'b0000110;
-            4'd2: decoded_leds = 7'b1011011;
-            4'd3: decoded_leds = 7'b1001111;
-            4'd4: decoded_leds = 7'b1100110;
-            4'd5: decoded_leds = 7'b1101101;
-            4'd6: decoded_leds = 7'b1111101;
-            4'd7: decoded_leds = 7'b0000111;
-            4'd8: decoded_leds = 7'b1111111;
-            4'd9: decoded_leds = 7'b1101111;
-            default: decoded_leds = 7'b0000000;
+        case (state)
+            IDLE: begin
+                if      (any_crit)              next_state = FAULT;
+                else if (any_warn)              next_state = WARN;
+                else                            next_state = IDLE;
+            end
+            WARN: begin
+                if      (any_crit)              next_state = FAULT;
+                else if (hyst_done && all_safe) next_state = IDLE;
+                else                            next_state = WARN;
+            end
+            FAULT: begin
+                if      (wdog_fired)            next_state = SHUTDOWN;
+                else if (safe_reset && all_safe) next_state = IDLE;
+                else                            next_state = FAULT;
+            end
+            SHUTDOWN: begin
+                if (safe_reset && all_safe)     next_state = IDLE;
+                else                            next_state = SHUTDOWN;
+            end
+            default:                            next_state = IDLE;
         endcase
     end
+
+    // ORIGINAL OUTPUTS (kept for meaning)
+    wire [7:0] core_out;
+    assign core_out[0]   = (state != IDLE);
+    assign core_out[1]   = (state == SHUTDOWN);
+    assign core_out[2]   = thermal_latch;
+    assign core_out[4:3] = state;
+    assign core_out[6:5] = soc;
+    assign core_out[7]   = curr_crit;
+
+    // DISPLAY LOGIC (IMPROVED)
+    wire [3:0] display_val;
+    assign display_val = {state, soc};  // 0–15 range
+
+    reg [6:0] seg;
+
+    always @(*) begin
+        case (display_val)
+            4'd0: seg = 7'b0111111;
+            4'd1: seg = 7'b0000110;
+            4'd2: seg = 7'b1011011;
+            4'd3: seg = 7'b1001111;
+            4'd4: seg = 7'b1100110;
+            4'd5: seg = 7'b1101101;
+            4'd6: seg = 7'b1111101;
+            4'd7: seg = 7'b0000111;
+            4'd8: seg = 7'b1111111;
+            4'd9: seg = 7'b1101111;
+            4'd10: seg = 7'b1110111; // A
+            4'd11: seg = 7'b1111100; // b
+            4'd12: seg = 7'b0111001; // C
+            4'd13: seg = 7'b1011110; // d
+            4'd14: seg = 7'b1111001; // E
+            4'd15: seg = 7'b1110001; // F
+            default: seg = 7'b0000000;
+        endcase
+    end
+
+    // FINAL OUTPUT
+    assign uo_out[6:0] = seg;
+    assign uo_out[7]   = core_out[7];
 
 endmodule
