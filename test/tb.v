@@ -4,7 +4,6 @@
 module tb ();
 
   initial begin
-    $display("=== Medical Battery Monitor — TinyTapeout Testbench ===");
     $dumpfile("tb.fst");
     $dumpvars(0, tb);
     #1;
@@ -24,7 +23,6 @@ module tb ();
   wire VGND = 1'b0;
 `endif
 
-  // FIXED MODULE NAME
   tt_um_AnjaniKad_medical_bms user_project (
 `ifdef GL_TEST
       .VPWR   (VPWR),
@@ -40,35 +38,17 @@ module tb ();
       .rst_n  (rst_n)
   );
 
-  // INIT
+  // Initial conditions - DO NOT drive a test sequence here.
+  // cocotb controls stimulus. tb.v only provides the clock scaffold.
   initial begin
-    clk = 0;
-    rst_n = 0;
-    ena = 1;
-    ui_in = 0;
-    uio_in = 0;
+    clk    = 0;
+    rst_n  = 0;
+    ena    = 1;
+    ui_in  = 8'b0;
+    uio_in = 8'b0;
   end
 
-  // CLOCK
-  always #5 clk = ~clk;
-
-  // TEST SEQUENCE
-  initial begin
-    #10 rst_n = 1;
-
-    ui_in = 8'b01000000;
-    #50;
-
-    ui_in = 8'b00000010;
-    #50;
-
-    ui_in = 8'b01000000 | (1 << 6);
-    #50;
-
-    ui_in[7] = 1;
-    #50;
-
-    $finish;
-  end
+  // 10 MHz clock (100ns period)
+  always #50 clk = ~clk;
 
 endmodule
