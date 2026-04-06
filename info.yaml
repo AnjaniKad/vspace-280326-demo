@@ -1,7 +1,7 @@
 # Tiny Tapeout project information
 project:
   title:        "V-SPACE Demo Hardware Stopwatch"
-  author:       "Advaittej"
+  author:       "Anjani"
   discord:      "" 
   description:  "1-second interval stopwatch with start/pause toggled via input switch."
   language:     "Verilog" 
@@ -11,7 +11,7 @@ project:
   tiles: "1x1" 
 
   # Your top module name must start with "tt_um_". 
-  top_module:  "tt_um_advaittej_stopwatch"
+  top_module:  "tt_um_AnjaniKad_medical_bms"
 
   # List your project's source files here.
   source_files:
