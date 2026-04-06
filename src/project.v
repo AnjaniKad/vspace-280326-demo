@@ -149,7 +149,6 @@ module tt_um_AnjaniKad_medical_bms (
     end
 
     // FINAL OUTPUT
-    assign uo_out[6:0] = seg;
-    assign uo_out[7]   = core_out[7];
+    assign uo_out = core_out;
 
 endmodule
