@@ -19,7 +19,8 @@ module tt_um_AnjaniKad_medical_bms (
     wire       temp_flag  = ui_in[6];
     wire       safe_reset = ui_in[7];
 
-    wire volt_crit = (voltage == 4'd1) | (voltage >= 4'd14);
+    wire volt_valid = (voltage != 4'd0);
+    wire volt_crit  = volt_valid & ((voltage == 4'd1) | (voltage >= 4'd14));
     wire volt_warn   = ((voltage == 4'd2)  | (voltage == 4'd3) |
                         (voltage == 4'd12) | (voltage == 4'd13));
     wire volt_normal = ~volt_crit & ~volt_warn;
